@@ -62,7 +62,7 @@ def mount(
     try:
         for file in data['files']:
             item = create_file(file, file['nome'])
-            item.setIcon(QIcon('file.png'))
+            item.setIcon(QIcon('icons/file2.png'))
             if parent is None and model is not None:
                 model.appendRow(item)
             if parent is not None and model is None:
@@ -70,7 +70,7 @@ def mount(
 
         for dirt in data['subdirectories']:
             dir_item = create_dir(dirt)
-            dir_item.setIcon(QIcon('folder.png'))
+            dir_item.setIcon(QIcon('icons/folder2.png'))
             if parent is None and model is not None:
                 model.appendRow(dir_item)
             if parent is not None and model is None:
