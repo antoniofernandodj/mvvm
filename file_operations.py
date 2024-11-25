@@ -1,21 +1,68 @@
 # file_operations.py
 from contextlib import suppress
+from dataclasses import dataclass
+from datetime import datetime
+import json
 import os
 from pathlib import Path
+from typing import List, Optional, Union
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QFileDialog
-from config import download_stream_data, ensure_slash_after_and_before
+from config import Favorito, download_stream_data, ensure_slash_after_and_before
 from utils import is_file
 from network import FileClient
+from config import settings, FavoritosService
 
 
 with suppress(ImportError, ModuleNotFoundError):
     from view import FileMongo
 
 
+def human_readable_size(size_in_bytes: float) -> str:
+    """
+    Converte um tamanho em bytes para um formato legível por humanos.
+
+    :param size_in_bytes: O tamanho em bytes a ser convertido.
+    :return: Uma string representando o tamanho em formato legível por humanos.
+    """
+    if size_in_bytes == 0:
+        return "0 B"
+    
+    units = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
+    power = 1024  # Fator de conversão
+    n = 0  # Índice da unidade atual
+
+    # Reduzir o tamanho até ser menor que 1024, trocando para a próxima unidade
+    while size_in_bytes >= power and n < len(units) - 1:
+        size_in_bytes /= power
+        n += 1
+    
+    # Retornar o valor formatado com duas casas decimais
+    return f"{size_in_bytes:.2f} {units[n]}"
+
+
+@dataclass
+class Item:
+    type: str
+    id: str
+    path: str
+    created_at: Optional[str]
+
+@dataclass
+class File(Item):
+    f_size: int
+    name: str
+
+@dataclass
+class Directory(Item):
+    pass
+
+
+
 class FileOperations:
     def __init__(self, window: 'FileMongo', client: FileClient):
         self.window = window
         self.client = client
+        self.favoritos = FavoritosService(settings)
 
     def download_file(self, file_data: dict):
         title = "Download"
@@ -261,6 +308,38 @@ class FileOperations:
             print(response)
             print(response.content)
             raise
+
+    def get_properties_stream(self, path: str):
+        items: List[Union[File, Directory]] = []
+        created_at = None
+        with self.client.get_properties_stream(path) as response:
+            for item in response.iter_text():
+                properties = json.loads(item)
+                if properties['type'] == 'file':
+                    file = File(**properties)
+                    items.append(File(**properties))
+                elif properties['type'] == 'directory':
+                    directory = Directory(**properties)
+                    if directory.path == path and directory.created_at:
+                        created_at = datetime.fromisoformat(directory.created_at)
+                    items.append(directory)
+
+        files = [item for item in items if isinstance(item, File)]
+        total_size = sum(file.f_size for file in files)
+
+        message = f"Tamanho total: {human_readable_size(total_size)}\n"
+        if created_at:
+            message += (
+                "Data de criação: "
+                f"{created_at.strftime('%d/%m/%Y - %H:%M:%S')}\n"
+            )
+
+        else:
+            message += "Data de criação mais antiga: Não disponível\n"
+
+        QMessageBox.information(self.window, "Informações de Itens", message)
+        
+        return items
     
     def file_store(self):
         filepath_input, _ = QFileDialog.getOpenFileName(
@@ -273,9 +352,8 @@ class FileOperations:
         filename = Path(filepath_input).name
         filepath_output = self.window.current_path
         try:
-            with open(filepath_input, 'rb') as f:
-                response = self.client.store_file(filepath_output, filename, f.read())
-                response.raise_for_status()
+            response = self.client.store_file_stream(filepath_input, filename, filepath_output)
+            response.raise_for_status()
 
             QMessageBox.information(
                 self.window, "Sucesso",
@@ -285,3 +363,7 @@ class FileOperations:
 
         except Exception as erro:
             QMessageBox.warning(self.window, "Erro", f"Falha ao enviar o arquivo: {erro}")
+
+    def add_bookmark(self, file_data: Favorito):
+        self.favoritos.add(file_data)
+        self.window.refresh_dirs()

@@ -1,33 +1,44 @@
 from __future__ import annotations
+
 import os
-from typing import Literal
-from config import ensure_slash_after_and_before, mount, settings
-from context_menu import ContextMenu, is_file
+from typing import Literal, Optional
+from pathlib import Path
+
+from PySide6.QtCore import QSize, Qt, QPoint, QModelIndex, QThread, Signal, QEvent
+from PySide6.QtWidgets import QListView, QMainWindow
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QFileDialog
+from PySide6.QtGui import QStandardItemModel, QStandardItem, QResizeEvent, QMoveEvent
+
+from config import FavoritosService, ensure_slash_after_and_before, mount, settings
+from context_menu import ContextMenu
+from utils import is_file
 from file_operations import FileOperations
 from network import FileClient
 from .tree import Ui_MainWindow
-from PySide6.QtCore import QSize, Qt, QPoint, QModelIndex
-from PySide6.QtWidgets import QListView, QMainWindow
-from PySide6.QtWidgets import QMainWindow, QMessageBox
-from PySide6.QtGui import QStandardItemModel
-from pathlib import Path
+
 
 
 class FileMongo(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.__copy_from_data = None
+
         self.settings = settings
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.current_path = '/'
         self.copy_from_data = None
         self.setWindowTitle('FileMongo')
-        self.model = QStandardItemModel()
+        self.file_view_model = QStandardItemModel()
         self.model_tree = QStandardItemModel()
+        self.favoritos_model = QStandardItemModel()
         self.client = FileClient(base_url=self.settings.value('API'))
         self.file_operations = FileOperations(self, self.client)
         self.context_menu = ContextMenu(self, self.file_operations)
+        self.favoritos = FavoritosService(self.settings)
+        self.setMinimumWidth(100)
+
+        self.restore_window_position()
+
         self.setup_tree_view()
         self.setup_callbacks()
 
@@ -40,7 +51,17 @@ class FileMongo(QMainWindow):
         self.mount_on_path(path)
 
     def on_item_clicked(self, index: QModelIndex):
-        item = self.model.itemFromIndex(index)
+        item = self.file_view_model.itemFromIndex(index)
+        file_data = item.data()
+        self.open_or_download(file_data=file_data)
+
+    def on_bookmark_clicked(self, index: QModelIndex):
+        item = self.favoritos_model.itemFromIndex(index)
+        file_data = item.data()
+        self.open_or_download(file_data=file_data)
+
+    def on_item_tree_clicked(self, index: QModelIndex):
+        item = self.model_tree.itemFromIndex(index)
         file_data = item.data()
         self.open_or_download(file_data=file_data)
 
@@ -51,9 +72,22 @@ class FileMongo(QMainWindow):
         if not is_file(file_data):
             self.mount_on_path(file_data['path'])
 
-    def mount_on_path(self, path: str):
+    def open_parent(self, file_data: dict):
+        if is_file(file_data):
+            response = self.client.get_file_info(file_data['id'])
+            file_data = response.json()
+            self.mount_on_path(file_data['path'])
+        else:
+            response = self.client.get_dir_info(file_data['path'])
+            file_data = response.json()
+            parent_data = file_data.get('parent_data')
+            if parent_data:
+                self.mount_on_path(parent_data['path'])
+
+    def mount_on_path(self, path: str, write=True):
         path = ensure_slash_after_and_before(path)
         data = self.file_operations.list_directory(path)
+        model = self.file_view_model
 
         if 'não encontrado' in str(data):
             title: str = 'Erro na busca'
@@ -70,41 +104,103 @@ class FileMongo(QMainWindow):
             self.open_or_download({'path': path})
             return
 
-        self.model.clear()
-        self.model.appendRow(mount(data, self.model))
+        model.clear()
+        model.appendRow(mount(data, model))
         self.ui.lineEdit.setText(path)
         self.current_path = path
 
-    def setup_tree_view(self):
-        self.ui.listView.setModel(self.model)
-        self.ui.listView.setSpacing(27)
-        self.ui.treeView.setModel(self.model_tree)
+        if write:
+            self.settings.setValue('path', path)
+            self.settings.sync()
 
-        self.ui.listView.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.ui.listView.customContextMenuRequested.connect(self.show_context_menu)
+    def setup_tree_view(self):
+        self.ui.file_view.setModel(self.file_view_model)
+        self.ui.file_view.setSpacing(27)
+        self.ui.tree_view.setModel(self.model_tree)
 
         self.ui.aux_label.setVisible(False)
         self.ui.colar_aqui_button.setVisible(False)
 
-        self.mount_on_path('/')
+        path = self.settings.value('path') or '/'
+        self.mount_on_path(path, write=False)
 
+        self.mount_favoritos()
         data = self.file_operations.list_directory('/')
         self.model_tree.appendRow(mount(data, self.model_tree))
 
-        self.ui.listView.setViewMode(QListView.ViewMode.IconMode)
-        self.ui.listView.setIconSize(QSize(64,64))
-        self.ui.listView.doubleClicked.connect(self.on_item_clicked)
+        self.ui.file_view.setViewMode(QListView.ViewMode.IconMode)
+        self.ui.file_view.setIconSize(QSize(64,64))
+        self.ui.file_view.doubleClicked.connect(self.on_item_clicked)
+        self.ui.file_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ui.file_view.customContextMenuRequested.connect(self.show_file_view_context_menu)
 
-    def show_context_menu(self, pos: QPoint):
-        index = self.ui.listView.indexAt(pos)
+        self.ui.tree_view.doubleClicked.connect(self.on_item_tree_clicked)
+        self.ui.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ui.tree_view.customContextMenuRequested.connect(self.show_tree_view_context_menu)
+
+        self.ui.favoritos_tree_view.doubleClicked.connect(self.on_bookmark_clicked)
+        self.ui.favoritos_tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ui.favoritos_tree_view.customContextMenuRequested.connect(
+            self.show_favoritos_tree_view_context_menu
+        )
+
+    def show_favoritos_tree_view_context_menu(self, pos: QPoint):
+        view = self.ui.favoritos_tree_view
+        model = self.favoritos_model
+        index = view.indexAt(pos)
         if not index.isValid():
             return
 
-        item = self.model.itemFromIndex(index)
+        item = model.itemFromIndex(index)
         file_data = item.data()
 
-        menu = self.context_menu.create_menu(file_data=file_data)
-        menu.exec(self.ui.listView.viewport().mapToGlobal(pos))
+        menu = self.context_menu.create_favoritos_menu(file_data=file_data)
+        menu.exec(view.viewport().mapToGlobal(pos))
+
+    def show_file_view_context_menu(self, pos: QPoint):
+        view = self.ui.file_view
+        model = self.file_view_model
+        index = view.indexAt(pos)
+        if not index.isValid():
+            menu = self.context_menu.create_folder_menu(path=self.current_path)
+            menu.exec(view.viewport().mapToGlobal(pos))
+            return
+
+        item = model.itemFromIndex(index)
+        file_data = item.data()
+
+        menu = self.context_menu.create_file_menu(file_data=file_data)
+        menu.exec(view.viewport().mapToGlobal(pos))
+
+    def show_tree_view_context_menu(self, pos: QPoint):
+        view = self.ui.tree_view
+        model = self.model_tree
+        index = view.indexAt(pos)
+        if not index.isValid():
+            return
+
+        item = model.itemFromIndex(index)
+        file_data = item.data()
+
+        menu = self.context_menu.create_file_menu(file_data=file_data)
+        menu.exec(view.viewport().mapToGlobal(pos))
+
+    def mount_favoritos(self):
+
+        self.favoritos_model.clear()
+        for favorito in self.favoritos.get_all():
+            if is_file(favorito):
+                item = QStandardItem(favorito['nome'])
+                item.setData(favorito)
+                item.setEditable(False)
+                self.favoritos_model.appendRow(item)
+            else:
+                item = QStandardItem(Path(favorito['path']).name)
+                item.setData(favorito)
+                item.setEditable(False)
+                self.favoritos_model.appendRow(item)
+
+            self.ui.favoritos_tree_view.setModel(self.favoritos_model)
 
     def refresh_dirs(self):
         self.mount_on_path(self.current_path)
@@ -119,10 +215,18 @@ class FileMongo(QMainWindow):
         if is_file(file_data):
             complete_path = os.path.join(self.current_path, file_data['nome'])
             file_data = file_data | {'path': self.current_path, 'mode': mode}
-            self.__copy_from_data = file_data | {'path': self.current_path, 'mode': mode, 'type': 'file'}
+            self.copy_from_data = file_data | {
+                'path': self.current_path,
+                'mode': mode,
+                'type': 'file'
+            }
         else:
             complete_path = file_data['path']
-            self.__copy_from_data = file_data | {'path': complete_path, 'mode': mode, 'type': 'directory'}
+            self.copy_from_data = file_data | {
+                'path': complete_path,
+                'mode': mode, 'type':
+                'directory'
+            }
 
         
         self.ui.aux_label.setText('Copied:' if mode == 'copy' else 'Cut:')
@@ -136,27 +240,27 @@ class FileMongo(QMainWindow):
             self.ui.cutted_label.setText(complete_path)
 
     def paste_here(self):
-        if self.__copy_from_data is None:
+        if self.copy_from_data is None:
             raise ValueError
 
-        if self.__copy_from_data['mode'] == 'move':
-            self.file_operations.move(self.__copy_from_data, self.current_path)
+        if self.copy_from_data['mode'] == 'move':
+            self.file_operations.move(self.copy_from_data, self.current_path)
             self.ui.aux_label.setVisible(False)
             self.ui.colar_aqui_button.setVisible(False)
             self.ui.cutted_label.setVisible(False)
-            self.__copy_from_data = None
+            self.copy_from_data = None
 
-        elif self.__copy_from_data['mode'] == 'copy':
+        elif self.copy_from_data['mode'] == 'copy':
             self.file_operations.copy_file(
-                self.__copy_from_data['path'],
-                self.__copy_from_data['nome'],
+                self.copy_from_data['path'],
+                self.copy_from_data['nome'],
                 self.current_path
             )
         else:
             raise ValueError('Modo inválido')
 
     def clear_labels_if_deleted(self, id: str):
-        data = self.__copy_from_data
+        data = self.copy_from_data
         if data is None:
             raise ValueError
         
@@ -166,10 +270,10 @@ class FileMongo(QMainWindow):
         self.ui.aux_label.setVisible(False)
         self.ui.colar_aqui_button.setVisible(False)
         self.ui.cutted_label.setVisible(False)
-        self.__copy_from_data = None
+        self.copy_from_data = None
 
     def clear_copy_from_data_if_file_not_exists_anymore(self, file_data):
-        data = self.__copy_from_data
+        data = self.copy_from_data
         if data is None:
             return
 
@@ -177,7 +281,48 @@ class FileMongo(QMainWindow):
             self.ui.aux_label.setVisible(False)
             self.ui.colar_aqui_button.setVisible(False)
             self.ui.cutted_label.setVisible(False)
-            self.__copy_from_data = None
+            self.copy_from_data = None
+
+    def resizeEvent(self, event: QResizeEvent):
+
+        def hide(*args):
+            for arg in args:
+                arg.setVisible(False)
+        def show(*args):
+            for arg in args:
+                arg.setVisible(True)
+
+        size = event.size()
+        height = size.height()
+        width = size.width()
+
+        if width >= 600:
+            show(self.ui.frame_4)
+        else:
+            hide(self.ui.frame_4)
+
+        if height >= 460:
+            show(self.ui.label, self.ui.favoritos_tree_view)
+        else:
+            hide(self.ui.favoritos_tree_view, self.ui.label)
+
+    def closeEvent(self, event: QEvent):
+
+        size = self.size()
+    
+        height = size.height()
+        width = size.width()
+
+        self.settings.setValue('width', width)
+        self.settings.setValue('height', height)
+
+        self.settings.sync()
+
+    def restore_window_position(self):
+        width: int = self.settings.value("width", 800, type=int)  # type: ignore
+        height: int = self.settings.value("height", 600, type=int)  # type: ignore
+        self.resize(width, height)
+
 
     def setup_callbacks(self):
         f = self.enter_directory_from_address_bar

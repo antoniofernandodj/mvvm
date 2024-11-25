@@ -49,18 +49,29 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.setContentsMargins(3, 3, 3, 3)
         self.frame_4 = QFrame(self.centralwidget)
         self.frame_4.setObjectName(u"frame_4")
-        self.frame_4.setMaximumSize(QSize(300, 16777215))
+        self.frame_4.setMinimumSize(QSize(200, 0))
+        self.frame_4.setMaximumSize(QSize(260, 16777215))
         self.frame_4.setFrameShape(QFrame.Shape.StyledPanel)
         self.frame_4.setFrameShadow(QFrame.Shadow.Raised)
         self.verticalLayout = QVBoxLayout(self.frame_4)
         self.verticalLayout.setSpacing(0)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
-        self.treeView = QTreeView(self.frame_4)
-        self.treeView.setObjectName(u"treeView")
-        self.treeView.setStyleSheet(u"border: 0px;")
+        self.tree_view = QTreeView(self.frame_4)
+        self.tree_view.setObjectName(u"tree_view")
+        self.tree_view.setStyleSheet(u"border: 0px;")
 
-        self.verticalLayout.addWidget(self.treeView)
+        self.verticalLayout.addWidget(self.tree_view)
+
+        self.label = QLabel(self.frame_4)
+        self.label.setObjectName(u"label")
+
+        self.verticalLayout.addWidget(self.label)
+
+        self.favoritos_tree_view = QTreeView(self.frame_4)
+        self.favoritos_tree_view.setObjectName(u"favoritos_tree_view")
+
+        self.verticalLayout.addWidget(self.favoritos_tree_view)
 
 
         self.horizontalLayout_2.addWidget(self.frame_4)
@@ -108,11 +119,11 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2.addWidget(self.frame_2)
 
-        self.listView = QListView(self.frame)
-        self.listView.setObjectName(u"listView")
-        self.listView.setStyleSheet(u"border: 0px;")
+        self.file_view = QListView(self.frame)
+        self.file_view.setObjectName(u"file_view")
+        self.file_view.setStyleSheet(u"border: 0px;")
 
-        self.verticalLayout_2.addWidget(self.listView)
+        self.verticalLayout_2.addWidget(self.file_view)
 
         self.frame_3 = QFrame(self.frame)
         self.frame_3.setObjectName(u"frame_3")
@@ -169,6 +180,7 @@ class Ui_MainWindow(object):
         self.actionRemove.setText(QCoreApplication.translate("MainWindow", u"Remove", None))
         self.actionInfo.setText(QCoreApplication.translate("MainWindow", u"Info", None))
         self.actionNew_folder.setText(QCoreApplication.translate("MainWindow", u"New folder", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"Favoritos", None))
         self.voltar_button.setText(QCoreApplication.translate("MainWindow", u"Voltar", None))
         self.ir_button.setText(QCoreApplication.translate("MainWindow", u"Ir", None))
         self.nova_pasta.setText(QCoreApplication.translate("MainWindow", u"Nova Pasta", None))

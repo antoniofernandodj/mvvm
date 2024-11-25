@@ -1,9 +1,10 @@
 import base64
 import httpx
 
+
 class FileClient:
-    def __init__(self, base_url: str):
-        self.client = httpx.Client(base_url=base_url)
+    def __init__(self, base_url: str, timeout: int = 30):
+        self.client = httpx.Client(base_url=base_url, timeout=timeout)
 
     def download_file(self, file_id: str):
         return self.client.stream("GET", f"/file/download/{file_id}")
@@ -13,6 +14,12 @@ class FileClient:
 
     def delete_file(self, file_id: str) -> httpx.Response:
         return self.client.delete(f"/file/{file_id}")
+    
+    def get_file_info(self, file_id: str) -> httpx.Response:
+        return self.client.get(f"/file/{file_id}")
+    
+    def get_dir_info(self, dir_id: str) -> httpx.Response:
+        return self.client.get(f"/directory/", params={'path': dir_id})
 
     def list_directory(self, path: str) -> httpx.Response:
         return self.client.get("/directory/tree/", params={"path": path})
@@ -27,10 +34,15 @@ class FileClient:
         params = {"path": path, 'new_directory_path': new_directory_path}
         return self.client.patch("/directory/rename/", params=params)
     
-    def store_file(self, path: str, file_name: str, data: bytes) -> httpx.Response:
-        body = {"name": file_name, 'b64': base64.b64encode(data).decode('utf-8')}
-        return self.client.post("/file/store/", json=body, params={'path': path})
-    
+    def store_file_stream(self, file_content_path, filename, path):
+        with open(file_content_path, 'rb') as file:
+            files = {'file': (filename, file, 'application/octet-stream')}
+            headers = {'path': path, 'filename': filename}
+            return self.client.post('/file/store/stream', files=files, headers=headers)
+
+    def get_properties_stream(self, path):
+        return self.client.stream('GET', '/directory/property/', params={'path': path})
+
     def move_file(self, path: str, file_name: str, new_directory_path: str) -> httpx.Response:
         params = {"filename": file_name, 'path': path, 'new_directory_path': new_directory_path}
         return self.client.put("/file/move/", params=params)

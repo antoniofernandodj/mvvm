@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, TypedDict
 from httpx import Response
 from PySide6.QtGui import QStandardItem, QStandardItemModel, QIcon
 from PySide6.QtGui import QStandardItemModel, QStandardItem
@@ -8,12 +8,39 @@ from pathlib import Path
 
 
 # Defina o escopo e a organização
-settings = QSettings("MinhaEmpresa", "MeuAplicativo")
-settings.setValue('API', "http://localhost:8000")
-settings.setValue("download_path", os.path.join(
-        str(Path(__file__).parent.resolve()),
-        "download"
-))
+settings = QSettings(
+    "settings.ini",
+    QSettings.Format.IniFormat
+)
+
+
+class Favorito(TypedDict):
+    id: str
+    nome: str
+    tamanho: int
+    path: str
+
+
+class FavoritosService:
+    def __init__(self, settings: QSettings):
+        self.settings = settings
+
+    def add(self, item: Favorito) -> None:
+        favoritos = self.get_all()
+        if item not in favoritos:  # Evita duplicatas
+            favoritos.append(item)
+            self.settings.setValue('favoritos', favoritos)
+            self.settings.sync()
+
+    def get_all(self) -> List[Favorito]:
+        return self.settings.value('favoritos', type=list)  # type: ignore
+
+    def remove(self, item: str) -> None:
+        favoritos = self.get_all()
+        if item in favoritos:
+            favoritos.remove(item)
+            self.settings.setValue('favoritos', favoritos)
+            self.settings.sync()
 
 
 def download_stream_data(filename: str, stream_response: Response):
@@ -29,8 +56,6 @@ def download_stream_data(filename: str, stream_response: Response):
                 f.write(data)
     except:
         raise ConnectionError(stream_response.content.decode('utf-8'))
-    
-
 
 
 def create_file(data, name):
@@ -63,6 +88,7 @@ def mount(
         for file in data['files']:
             item = create_file(file, file['nome'])
             item.setIcon(QIcon('icons/file2.png'))
+            item.setData(file)
             if parent is None and model is not None:
                 model.appendRow(item)
             if parent is not None and model is None:
@@ -70,6 +96,7 @@ def mount(
 
         for dirt in data['subdirectories']:
             dir_item = create_dir(dirt)
+            dir_item.setData(dirt)
             dir_item.setIcon(QIcon('icons/folder2.png'))
             if parent is None and model is not None:
                 model.appendRow(dir_item)
