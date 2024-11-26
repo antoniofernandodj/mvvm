@@ -4,12 +4,38 @@ import os
 from typing import Literal, Optional
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QPoint, QModelIndex, QThread, Signal, QEvent
-from PySide6.QtWidgets import QListView, QMainWindow
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QFileDialog
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QResizeEvent, QMoveEvent
-
-from config import FavoritosService, ensure_slash_after_and_before, mount, settings
+from PySide6.QtCore import (
+    QSize,
+    Qt,
+    QPoint,
+    QModelIndex,
+    QThread,
+    Signal,
+    QEvent
+)
+from PySide6.QtWidgets import (
+    QListView, QMainWindow,
+    QStyledItemDelegate,
+    QMessageBox,
+    QFileDialog
+)
+from PySide6.QtGui import (
+    QStandardItemModel,
+    QStandardItem,
+    QResizeEvent,
+    QMoveEvent,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QBrush,
+    QColor
+)
+from config import (
+    FavoritosService,
+    ensure_slash_after_and_before,
+    mount,
+    settings
+)
 from context_menu import ContextMenu
 from utils import is_file
 from file_operations import FileOperations
@@ -36,6 +62,8 @@ class FileMongo(QMainWindow):
         self.context_menu = ContextMenu(self, self.file_operations)
         self.favoritos = FavoritosService(self.settings)
         self.setMinimumWidth(100)
+        self.item_from: Optional[QStandardItem] = None
+        self.item_to: Optional[QStandardItem] = None
 
         self.restore_window_position()
 
@@ -90,19 +118,26 @@ class FileMongo(QMainWindow):
         model = self.file_view_model
 
         if 'não encontrado' in str(data):
-            title: str = 'Erro na busca'
-            text = f'Diretório {path} não encontrado. Deseja criar?'
-            result = QMessageBox.question(
-                self, title, text,
-                QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes
-            )
+            needs_confirmation = True if path != '/' else False
 
-            if result != QMessageBox.StandardButton.Yes.value:
+            if needs_confirmation:
+                title: str = 'Erro na busca'
+                text = f'Diretório {path} não encontrado. Deseja criar?'
+                result = QMessageBox.question(
+                    self, title, text,
+                    QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes
+                )
+
+                if result != QMessageBox.StandardButton.Yes.value:
+                    return
+                
+                self.file_operations.create_directory(path)
+                self.open_or_download({'path': path})
                 return
-            
-            self.file_operations.create_directory(path)
-            self.open_or_download({'path': path})
-            return
+            else:
+                self.file_operations.create_directory(path, needs_confirmation)
+                self.open_or_download({'path': path})
+                return
 
         model.clear()
         model.appendRow(mount(data, model))
@@ -134,6 +169,14 @@ class FileMongo(QMainWindow):
         self.ui.file_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.ui.file_view.customContextMenuRequested.connect(self.show_file_view_context_menu)
 
+        self.ui.file_view.setDragEnabled(True)
+        self.ui.file_view.setAcceptDrops(True)
+        self.ui.file_view.setDragDropMode(QListView.DragDropMode.DragDrop)
+        self.ui.file_view.installEventFilter(self)
+
+        self.ui.file_view.dropEvent = self.drop_folder
+        self.ui.file_view.dragEnterEvent = self.drag_foder_enter
+
         self.ui.tree_view.doubleClicked.connect(self.on_item_tree_clicked)
         self.ui.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.ui.tree_view.customContextMenuRequested.connect(self.show_tree_view_context_menu)
@@ -143,6 +186,48 @@ class FileMongo(QMainWindow):
         self.ui.favoritos_tree_view.customContextMenuRequested.connect(
             self.show_favoritos_tree_view_context_menu
         )
+
+    def drag_foder_enter(self, event: QDragMoveEvent):
+        event.acceptProposedAction()
+
+        index = self.ui.file_view.indexAt(event.pos())
+        if index.isValid():
+            self.item_from = self.file_view_model.itemFromIndex(index)
+
+
+    def drop_folder(self, e: QDropEvent):
+        e.setDropAction(Qt.DropAction.MoveAction)
+        e.acceptProposedAction()
+
+        index = self.ui.file_view.indexAt(e.pos())
+        if index.isValid():
+
+            self.item_to = self.file_view_model.itemFromIndex(index)
+            if self.item_from is None:
+                return
+            if self.item_from == self.item_to:
+                return
+
+            item_from = self.item_from.data()
+            item_to = self.item_to.data()
+            item_from['type'] = 'file' if is_file(item_from) else 'directory'
+            item_to['type'] = 'file' if is_file(item_to) else 'directory'
+
+            if item_to['type'] == 'file':
+                return
+            
+            from_path = self.current_path
+            to_path = item_to['path']
+            if item_from['type'] == 'directory':
+                self.file_operations.move_directory(from_path, to_path)
+
+            else:
+                filename = item_from['nome']
+                self.file_operations.move_file(from_path, filename, to_path)
+
+            print({'to': item_to})
+            print({'from': item_from})
+
 
     def show_favoritos_tree_view_context_menu(self, pos: QPoint):
         view = self.ui.favoritos_tree_view

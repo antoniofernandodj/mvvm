@@ -255,7 +255,7 @@ class FileOperations:
 
         self.window.refresh_dirs()
 
-    def create_directory(self, path):
+    def create_directory(self, path: str, needs_confirmation: bool = True):
         response = self.client.create_directory(path)
         try:
             response.raise_for_status()
@@ -265,9 +265,10 @@ class FileOperations:
             QMessageBox.warning(self.window, title, msg)
             return
         
-        title: str = 'Sucesso'
-        msg: str = f'Diretório {path} criado com sucesso!'
-        QMessageBox.information(self.window, title, msg)
+        if needs_confirmation:
+            title: str = 'Sucesso'
+            msg: str = f'Diretório {path} criado com sucesso!'
+            QMessageBox.information(self.window, title, msg)
 
         self.window.refresh_dirs()
 
