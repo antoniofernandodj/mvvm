@@ -3,6 +3,7 @@ from contextlib import suppress
 from PySide6.QtWidgets import QMenu
 from PySide6.QtGui import QAction
 from file_operations import FileOperations
+from t import FileOrDirDict
 from utils import is_file
 from config import settings, FavoritosService
 
@@ -16,7 +17,7 @@ class ContextMenu:
         self.file_operations = file_operations
         self.favoritos = FavoritosService(settings)
 
-    def create_file_menu(self, file_data: dict) -> QMenu:
+    def create_file_menu(self, file_data: FileOrDirDict) -> QMenu:
         menu = QMenu(self.window)
 
         menu.addAction(self.create_action_open(data=file_data))
@@ -44,7 +45,7 @@ class ContextMenu:
 
     def create_action_new_folder(self, path):
         action = QAction('Nova pasta', self.window)
-        action.triggered.connect(lambda: self.file_operations.nova_pasta())
+        action.triggered.connect(lambda: self.file_operations.nova_pasta(path))
         return action
 
     def create_action_folder_properties(self, path):
@@ -104,6 +105,7 @@ class ContextMenu:
         return action_delete
 
     def create_action_rename(self, data):
+        print(data)
         action_rename = QAction("Renomear", self.window)
         action_rename.triggered.connect(lambda: self.file_operations.rename(data))
         return action_rename

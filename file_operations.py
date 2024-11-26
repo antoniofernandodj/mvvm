@@ -5,9 +5,10 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QFileDialog
 from config import Favorito, download_stream_data, ensure_slash_after_and_before
+from t import DirectoryDict, FileDict, FileOrDirDict
 from utils import is_file
 from network import FileClient
 from config import settings, FavoritosService
@@ -64,7 +65,7 @@ class FileOperations:
         self.client = client
         self.favoritos = FavoritosService(settings)
 
-    def download_file(self, file_data: dict):
+    def download_file(self, file_data: FileOrDirDict):
         title = "Download"
         question = f"Você deseja realizar o download do arquivo {file_data['nome']}?"
         if QMessageBox.question(self.window, title, question) != QMessageBox.StandardButton.Yes:
@@ -84,32 +85,41 @@ class FileOperations:
                 f"Falha ao baixar o arquivo {file_data['nome']}: {e}"
             )
 
-    def rename(self, file_data: dict):
+    def rename(self, file_data: FileOrDirDict):
+        self.window.backup()
         if is_file(file_data):
             self.rename_file(file_data)
         else:
-            self.rename_directory(file_data)
+            self.rename_directory({'files'}) # type: ignore
 
-    def delete(self, file_data: dict):
+    def delete(self, file_data: FileOrDirDict):
         if is_file(file_data):
             self.delete_file(file_data)
         else:
             self.delete_directory(file_data)
 
-    def rename_file(self, file_data: dict):
-        title = "Rename"
-        label = "Digite o novo nome de arquivo:"
-        new_name, ok = QInputDialog.getText(self.window, title, label, text=file_data["nome"])
-        if not ok:
-            return
-        new_name = new_name.strip()
+    def rename_file(
+        self,
+        file_data: FileOrDirDict,
+        mode: Literal['show_dialog', 'not_show_dialog'] = 'show_dialog'
+    ):
+        if mode == 'show_dialog':
+            title = "Rename"
+            label = "Digite o novo nome de arquivo:"
+            new_name, ok = QInputDialog.getText(self.window, title, label, text=file_data["nome"])
+            if not ok:
+                return
+            new_name = new_name.strip()
+        else:
+            new_name = file_data["nome"]
         try:
-            self.client.rename_file(file_data["id"], new_name)
-            QMessageBox.information(
-                self.window,
-                "Sucesso",
-                f"Arquivo {new_name} renomeado com sucesso!"
-            )
+            if mode == 'show_dialog':
+                self.client.rename_file(file_data["id"], new_name)
+                QMessageBox.information(
+                    self.window,
+                    "Sucesso",
+                    f"Arquivo {new_name} renomeado com sucesso!"
+                )
         except Exception as e:
             QMessageBox.warning(
                 self.window,
@@ -119,7 +129,7 @@ class FileOperations:
 
         self.window.refresh_dirs()
 
-    def rename_directory(self, file_data: dict):
+    def rename_directory(self, file_data: FileOrDirDict):
         title: str = "Rename"
         label: str = "Digite o novo nome do diretório:"
         path = Path(file_data["path"]).name
@@ -143,12 +153,12 @@ class FileOperations:
             QMessageBox.warning(
                 self.window,
                 "Erro na operação",
-                f"Falha ao renomear o diretório {file_data['nome']}: {e}"
+                f"Falha ao renomear o diretório {file_data.get('')}: {e}"
             )
 
         self.window.refresh_dirs()
 
-    def delete_directory(self, file_data: dict):
+    def delete_directory(self, file_data: FileOrDirDict):
         title: str = "Remove"
         question: str = f"Você deseja remover o diretório {file_data['path']}?"
 
@@ -177,7 +187,8 @@ class FileOperations:
         QMessageBox.information(self.window, title, msg)
         self.window.refresh_dirs()
 
-    def move(self, file_data: dict, new_parent_path: str):
+    def move(self, file_data: FileOrDirDict, new_parent_path: str):
+        self.window.backup()
         if is_file(file_data):
             self.move_file(file_data['path'], file_data['nome'], new_parent_path)
         else:
@@ -198,16 +209,45 @@ class FileOperations:
 
         self.window.refresh_dirs()
 
-    def move_directory(self, path: str, new_parent_path: str):
+    def move_file_by_id(
+        self,
+        id: str,
+        new_directory_path: str,
+        mode: Literal['show_dialog', 'not_show_dialog'] = 'show_dialog'
+    ):
+        try:
+            response = self.client.move_file_by_id(id, new_directory_path)
+            response.raise_for_status()
+
+            if mode == 'show_dialog':
+                title: str = 'Sucesso'
+                msg: str = f'Arquivo id:{id} movido com sucesso!'
+                QMessageBox.information(self.window, title, msg)
+        except Exception as erro:
+            title: str = 'Erro na operação'
+            msg: str = f"Falha ao mover o arquivo: {erro}"
+            QMessageBox.warning(self.window, title, msg)
+            return
+
+        self.window.refresh_dirs()
+
+    def move_directory(
+        self,
+        path: str,
+        new_parent_path: str,
+        mode: Literal['show_dialog', 'not_show_dialog'] = 'show_dialog'
+    ):
         try:
             response = self.client.move_directory(
                 ensure_slash_after_and_before(path), 
                 ensure_slash_after_and_before(new_parent_path)
             )
             response.raise_for_status()
-            title: str = 'Sucesso'
-            msg: str = f'Diretório {path} movido com sucesso!'
-            QMessageBox.information(self.window, title, msg)
+
+            if mode == 'show_dialog':
+                title: str = 'Sucesso'
+                msg: str = f'Diretório {path} movido com sucesso!'
+                QMessageBox.information(self.window, title, msg)
         except Exception as erro:
             title: str = 'Erro na operação'
             msg: str = f"Falha ao mover o diretório: {erro}"
@@ -231,16 +271,17 @@ class FileOperations:
 
         self.window.refresh_dirs()
 
-    def nova_pasta(self):
+    def nova_pasta(self, path):
         title: str = 'Nova pasta'
         label: str = 'Digite o nome da nova pasta'
         text, ok = QInputDialog.getText(self.window, title, label)
         if not ok:
             return
         text = text.strip()
-        path = os.path.join(self.window.current_path, text)
+        print(path)
+        complete_path = os.path.join(path, text)
         
-        response = self.client.create_directory(path)
+        response = self.client.create_directory(complete_path)
         try:
             response.raise_for_status()
         except Exception as erro:
@@ -272,7 +313,7 @@ class FileOperations:
 
         self.window.refresh_dirs()
 
-    def delete_file(self, file_data: dict):
+    def delete_file(self, file_data: FileOrDirDict):
         title: str = "Remove"
         question: str = f"Você deseja remover o arquivo {file_data['nome']}?"
         result = QMessageBox.warning(

@@ -90,10 +90,20 @@ class Ui_MainWindow(object):
         self.frame_2.setFrameShadow(QFrame.Shadow.Raised)
         self.gridLayout = QGridLayout(self.frame_2)
         self.gridLayout.setObjectName(u"gridLayout")
+        self.nova_pasta = QToolButton(self.frame_2)
+        self.nova_pasta.setObjectName(u"nova_pasta")
+
+        self.gridLayout.addWidget(self.nova_pasta, 0, 1, 1, 1)
+
         self.voltar_button = QToolButton(self.frame_2)
         self.voltar_button.setObjectName(u"voltar_button")
 
         self.gridLayout.addWidget(self.voltar_button, 0, 2, 1, 1)
+
+        self.upload_button = QToolButton(self.frame_2)
+        self.upload_button.setObjectName(u"upload_button")
+
+        self.gridLayout.addWidget(self.upload_button, 0, 0, 1, 1)
 
         self.ir_button = QPushButton(self.frame_2)
         self.ir_button.setObjectName(u"ir_button")
@@ -106,15 +116,11 @@ class Ui_MainWindow(object):
 
         self.gridLayout.addWidget(self.lineEdit, 0, 3, 1, 1)
 
-        self.nova_pasta = QToolButton(self.frame_2)
-        self.nova_pasta.setObjectName(u"nova_pasta")
+        self.undo_button = QToolButton(self.frame_2)
+        self.undo_button.setObjectName(u"undo_button")
+        self.undo_button.setEnabled(False)
 
-        self.gridLayout.addWidget(self.nova_pasta, 0, 1, 1, 1)
-
-        self.upload_button = QToolButton(self.frame_2)
-        self.upload_button.setObjectName(u"upload_button")
-
-        self.gridLayout.addWidget(self.upload_button, 0, 0, 1, 1)
+        self.gridLayout.addWidget(self.undo_button, 0, 5, 1, 1)
 
 
         self.verticalLayout_2.addWidget(self.frame_2)
@@ -181,10 +187,11 @@ class Ui_MainWindow(object):
         self.actionInfo.setText(QCoreApplication.translate("MainWindow", u"Info", None))
         self.actionNew_folder.setText(QCoreApplication.translate("MainWindow", u"New folder", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Favoritos", None))
-        self.voltar_button.setText(QCoreApplication.translate("MainWindow", u"Voltar", None))
-        self.ir_button.setText(QCoreApplication.translate("MainWindow", u"Ir", None))
         self.nova_pasta.setText(QCoreApplication.translate("MainWindow", u"Nova Pasta", None))
+        self.voltar_button.setText(QCoreApplication.translate("MainWindow", u"Voltar", None))
         self.upload_button.setText(QCoreApplication.translate("MainWindow", u"Upload", None))
+        self.ir_button.setText(QCoreApplication.translate("MainWindow", u"Ir", None))
+        self.undo_button.setText(QCoreApplication.translate("MainWindow", u"Desfazer", None))
         self.aux_label.setText(QCoreApplication.translate("MainWindow", u"Cut:", None))
         self.cutted_label.setText("")
         self.colar_aqui_button.setText(QCoreApplication.translate("MainWindow", u"Colar aqui", None))

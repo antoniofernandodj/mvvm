@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from abc import ABC
 import os
-from typing import Literal, Optional
+from pprint import pprint
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -37,11 +39,37 @@ from config import (
     settings
 )
 from context_menu import ContextMenu
+from t import DirectoryDict, FileOrDirDict
 from utils import is_file
 from file_operations import FileOperations
 from network import FileClient
 from .tree import Ui_MainWindow
 
+
+class Snapshot:
+    def __init__(self, window: FileMongo, current_path: str, mount: DirectoryDict):
+        self.__window = window
+        self.__current_path = current_path
+        self.__mount = mount
+
+    def restore(self):
+        path = self.__mount['path']
+
+        for children in self.__mount['files']:
+            self.__window.file_operations.rename_file(children, 'not_show_dialog')  # type: ignore
+            self.__window.file_operations.move_file_by_id(
+                children['id'], path, 'not_show_dialog'
+            )
+        for subdir in self.__mount['subdirectories']:
+            self.__window.file_operations.move_directory(
+                subdir['path'], path, 'not_show_dialog'
+            )
+
+    def __repr__(self):
+        return f"Snapshot(path='{self.__current_path}')"
+
+    def __str__(self):
+        return f"Snapshot(path='{self.__current_path}')"
 
 
 class FileMongo(QMainWindow):
@@ -52,7 +80,7 @@ class FileMongo(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.current_path = '/'
-        self.copy_from_data = None
+        self.copy_from_data: Optional[FileOrDirDict] = None
         self.setWindowTitle('FileMongo')
         self.file_view_model = QStandardItemModel()
         self.model_tree = QStandardItemModel()
@@ -64,6 +92,7 @@ class FileMongo(QMainWindow):
         self.setMinimumWidth(100)
         self.item_from: Optional[QStandardItem] = None
         self.item_to: Optional[QStandardItem] = None
+        self.history: List[Snapshot] = []
 
         self.restore_window_position()
 
@@ -73,6 +102,22 @@ class FileMongo(QMainWindow):
     def voltar(self):
         parent_path = str(Path(self.current_path).parent)
         self.mount_on_path(parent_path)
+
+    def backup(self):
+        mount = self.file_operations.list_directory(self.current_path)
+        snapshot = Snapshot(self, self.current_path, mount)
+        self.history.append(snapshot)
+        print('New history:')
+        print(self.history)
+        self.ui.undo_button.setEnabled(True)
+
+    def undo(self):
+        if self.history:
+            snapshot = self.history.pop()
+            snapshot.restore()
+            del snapshot
+        if not self.history:
+            self.ui.undo_button.setEnabled(False)
 
     def enter_directory_from_address_bar(self):
         path = self.ui.lineEdit.text()
@@ -93,14 +138,14 @@ class FileMongo(QMainWindow):
         file_data = item.data()
         self.open_or_download(file_data=file_data)
 
-    def open_or_download(self, file_data: dict):
+    def open_or_download(self, file_data: FileOrDirDict):
         if is_file(file_data):
             self.file_operations.download_file(file_data)
 
         if not is_file(file_data):
             self.mount_on_path(file_data['path'])
 
-    def open_parent(self, file_data: dict):
+    def open_parent(self, file_data: FileOrDirDict):
         if is_file(file_data):
             response = self.client.get_file_info(file_data['id'])
             file_data = response.json()
@@ -132,11 +177,11 @@ class FileMongo(QMainWindow):
                     return
                 
                 self.file_operations.create_directory(path)
-                self.open_or_download({'path': path})
+                self.open_or_download({'path': path})  # type: ignore
                 return
             else:
                 self.file_operations.create_directory(path, needs_confirmation)
-                self.open_or_download({'path': path})
+                self.open_or_download({'path': path})  # type: ignore
                 return
 
         model.clear()
@@ -218,16 +263,13 @@ class FileMongo(QMainWindow):
             
             from_path = self.current_path
             to_path = item_to['path']
+            self.backup()
             if item_from['type'] == 'directory':
                 self.file_operations.move_directory(from_path, to_path)
 
             else:
                 filename = item_from['nome']
                 self.file_operations.move_file(from_path, filename, to_path)
-
-            print({'to': item_to})
-            print({'from': item_from})
-
 
     def show_favoritos_tree_view_context_menu(self, pos: QPoint):
         view = self.ui.favoritos_tree_view
@@ -294,20 +336,20 @@ class FileMongo(QMainWindow):
         data = self.file_operations.list_directory('/')
         self.model_tree.appendRow(mount(data, self.model_tree))
 
-    def set_copy_from_file_data(self, file_data: dict, mode: Literal['move', 'copy']):
+    def set_copy_from_file_data(self, file_data: FileOrDirDict, mode: Literal['move', 'copy']):
 
         complete_path = None
         if is_file(file_data):
             complete_path = os.path.join(self.current_path, file_data['nome'])
-            file_data = file_data | {'path': self.current_path, 'mode': mode}
-            self.copy_from_data = file_data | {
+            file_data = file_data | {'path': self.current_path, 'mode': mode}  # type: ignore
+            self.copy_from_data = file_data | {  # type: ignore
                 'path': self.current_path,
                 'mode': mode,
                 'type': 'file'
             }
         else:
             complete_path = file_data['path']
-            self.copy_from_data = file_data | {
+            self.copy_from_data = file_data | {  # type: ignore
                 'path': complete_path,
                 'mode': mode, 'type':
                 'directory'
@@ -417,7 +459,7 @@ class FileMongo(QMainWindow):
         f = self.voltar
         self.ui.voltar_button.clicked.connect(f)
 
-        f = self.file_operations.nova_pasta
+        f = lambda: self.file_operations.nova_pasta(self.current_path)
         self.ui.nova_pasta.clicked.connect(f)
 
         f = self.file_operations.file_store
@@ -425,3 +467,6 @@ class FileMongo(QMainWindow):
 
         f = self.paste_here
         self.ui.colar_aqui_button.clicked.connect(f)
+
+        f = self.undo
+        self.ui.undo_button.clicked.connect(f)

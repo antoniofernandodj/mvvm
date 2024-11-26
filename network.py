@@ -46,7 +46,11 @@ class FileClient:
     def move_file(self, path: str, file_name: str, new_directory_path: str) -> httpx.Response:
         params = {"filename": file_name, 'path': path, 'new_directory_path': new_directory_path}
         return self.client.put("/file/move/", params=params)
-    
+
+    def move_file_by_id(self, id: str, new_directory_path: str):
+        params = {"id": id, 'new_directory_path': new_directory_path}
+        return self.client.put(f"/file/move/{id}", params=params)
+
     def move_directory(self, path: str, new_directory_path: str) -> httpx.Response:
         params = {'path': path, 'new_parent_path': new_directory_path}
         return self.client.put("/directory/move/", params=params)

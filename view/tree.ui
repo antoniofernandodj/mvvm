@@ -119,10 +119,24 @@
           <enum>QFrame::Shadow::Raised</enum>
          </property>
          <layout class="QGridLayout" name="gridLayout">
+          <item row="0" column="1">
+           <widget class="QToolButton" name="nova_pasta">
+            <property name="text">
+             <string>Nova Pasta</string>
+            </property>
+           </widget>
+          </item>
           <item row="0" column="2">
            <widget class="QToolButton" name="voltar_button">
             <property name="text">
              <string>Voltar</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QToolButton" name="upload_button">
+            <property name="text">
+             <string>Upload</string>
             </property>
            </widget>
           </item>
@@ -140,17 +154,13 @@
             </property>
            </widget>
           </item>
-          <item row="0" column="1">
-           <widget class="QToolButton" name="nova_pasta">
-            <property name="text">
-             <string>Nova Pasta</string>
+          <item row="0" column="5">
+           <widget class="QToolButton" name="undo_button">
+            <property name="enabled">
+             <bool>false</bool>
             </property>
-           </widget>
-          </item>
-          <item row="0" column="0">
-           <widget class="QToolButton" name="upload_button">
             <property name="text">
-             <string>Upload</string>
+             <string>Desfazer</string>
             </property>
            </widget>
           </item>
